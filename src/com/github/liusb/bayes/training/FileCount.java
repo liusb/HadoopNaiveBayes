@@ -28,44 +28,43 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.StringUtils;
 
-
 public class FileCount {
 
 	public static class FileRecordReader extends RecordReader<Text, Text> {
 
-	    private FileStatus[] files = null;
-	    private Text key = null;
-	    private Text value = null;
-	    private int pos;
+		private FileStatus[] files = null;
+		private Text key = null;
+		private Text value = null;
+		private int pos;
 
 		@Override
-		public void initialize(InputSplit genericSplit, TaskAttemptContext context)
-				throws IOException, InterruptedException {
-		    FileSplit split = (FileSplit) genericSplit;
-		    Configuration job = context.getConfiguration();
-		    Path dir = split.getPath();
-		    FileSystem fs = dir.getFileSystem(job);
-		    files =  fs.listStatus(dir);
+		public void initialize(InputSplit genericSplit,
+				TaskAttemptContext context) throws IOException,
+				InterruptedException {
+			FileSplit split = (FileSplit) genericSplit;
+			Configuration job = context.getConfiguration();
+			Path dir = split.getPath();
+			FileSystem fs = dir.getFileSystem(job);
+			files = fs.listStatus(dir);
 			pos = 0;
 		}
 
 		@Override
 		public boolean nextKeyValue() throws IOException, InterruptedException {
-		    if (key == null) {
-		        key = new Text();
-		      }
-		      if (value == null) {
-		        value = new Text();
-		      }
-		      if(files == null || pos == files.length){
-		    	  return false;
-		      }
-		      else {
-		    	  key.set(files[pos].getPath().getParent().getName());
-		    	  value.set(files[pos].getPath().getName());
-		    	  pos++;
-		    	  return true;
-		      }
+			if (key == null) {
+				key = new Text();
+			}
+			if (value == null) {
+				value = new Text();
+			}
+			if (files == null || pos == files.length) {
+				return false;
+			} else {
+				key.set(files[pos].getPath().getParent().getName());
+				value.set(files[pos].getPath().getName());
+				pos++;
+				return true;
+			}
 		}
 
 		@Override
@@ -80,11 +79,11 @@ public class FileCount {
 
 		@Override
 		public float getProgress() throws IOException, InterruptedException {
-		    if (files == null || files.length == 0) {
-		      return 0.0f;
-		    } else {
-			return Math.min(1.0f, pos / (float)files.length);
-		    }
+			if (files == null || files.length == 0) {
+				return 0.0f;
+			} else {
+				return Math.min(1.0f, pos / (float) files.length);
+			}
 		}
 
 		@Override
@@ -96,7 +95,8 @@ public class FileCount {
 
 	public static class DirInputFormat extends InputFormat<Text, Text> {
 
-		public static void setInputPath(JobContext context, Path path) throws IOException {
+		public static void setInputPath(JobContext context, Path path)
+				throws IOException {
 			Configuration conf = context.getConfiguration();
 			path = path.getFileSystem(conf).makeQualified(path);
 			String dir = StringUtils.escapeString(path.toString());
@@ -166,15 +166,18 @@ public class FileCount {
 			Reducer<Text, IntWritable, Text, DoubleWritable> {
 		private DoubleWritable result = new DoubleWritable();
 		private double all_count = 0;
-		
-		  protected void setup(Context context
-                  ) throws IOException, InterruptedException {
-			  JobConf conf = (JobConf)context.getConfiguration();
-			  JobClient client = new JobClient(conf);
-			  RunningJob job = client.getJob(JobID.forName(context.getJobID().toString()));
-			  all_count = (double)job.getCounters().findCounter(
-					  "org.apache.hadoop.mapred.Task$Counter", "MAP_OUTPUT_RECORDS").getValue();
-		  }
+
+		protected void setup(Context context) throws IOException,
+				InterruptedException {
+			JobConf conf = (JobConf) context.getConfiguration();
+			JobClient client = new JobClient(conf);
+			RunningJob job = client.getJob(JobID.forName(context.getJobID()
+					.toString()));
+			all_count = (double) job
+					.getCounters()
+					.findCounter("org.apache.hadoop.mapred.Task$Counter",
+							"MAP_OUTPUT_RECORDS").getValue();
+		}
 
 		public void reduce(Text key, Iterable<IntWritable> values,
 				Context context) throws IOException, InterruptedException {
@@ -182,34 +185,32 @@ public class FileCount {
 			for (IntWritable val : values) {
 				sum += val.get();
 			}
-			result.set(sum/all_count);
+			result.set(sum / all_count);
 			context.write(key, result);
 		}
 	}
-	
-	  public static boolean run() throws Exception {
-		    Configuration conf = new Configuration();
-		    conf.set("mapred.job.tracker", "192.168.56.120:9001");
-		    conf.set("fs.default.name","hdfs://192.168.56.120:9000");
-		    conf.set("mapred.jar", "F://WorkSpace//javaWorkspace//FileCount.jar");
-		    Job job = new Job(conf, "file count");
-		    job.setJarByClass(FileCount.class);
-		    job.setInputFormatClass(DirInputFormat.class);
-		    job.setMapperClass(FileCountMapper.class);
-		    job.setReducerClass(FileCountReducer.class);
-		    job.setMapOutputKeyClass(Text.class);
-		    job.setMapOutputValueClass(IntWritable.class);
-		    job.setOutputKeyClass(Text.class);
-		    job.setOutputValueClass(DoubleWritable.class);
-		    
-		    Path input = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/Country");
-		    Path output = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/FileCount");
-		    DirInputFormat.setInputPath(job, input);
-		    FileOutputFormat.setOutputPath(job, output);
 
-		    FileSystem fs = output.getFileSystem(job.getConfiguration());
-		    fs.delete(output, true);
+	public static boolean run(Configuration conf) throws Exception {
+		Job job = new Job(conf, "file count");
+		job.setJarByClass(FileCount.class);
+		job.setInputFormatClass(DirInputFormat.class);
+		job.setMapperClass(FileCountMapper.class);
+		job.setReducerClass(FileCountReducer.class);
+		job.setMapOutputKeyClass(Text.class);
+		job.setMapOutputValueClass(IntWritable.class);
+		job.setOutputKeyClass(Text.class);
+		job.setOutputValueClass(DoubleWritable.class);
 
-		    return job.waitForCompletion(true);
-		  }
+		Path input = new Path(
+				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/Country");
+		Path output = new Path(
+				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/FileCount");
+		DirInputFormat.setInputPath(job, input);
+		FileOutputFormat.setOutputPath(job, output);
+
+		FileSystem fs = output.getFileSystem(job.getConfiguration());
+		fs.delete(output, true);
+
+		return job.waitForCompletion(true);
+	}
 }
