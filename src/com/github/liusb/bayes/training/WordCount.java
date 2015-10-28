@@ -21,9 +21,9 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;
 import org.apache.hadoop.util.LineReader;
 import org.apache.hadoop.util.StringUtils;
-
 
 public class WordCount {
 
@@ -172,7 +172,7 @@ public class WordCount {
 
 		public void map(Text key, Text value, Context context)
 				throws IOException, InterruptedException {
-			word.set(key.toString() + '\t' + value.toString());
+			word.set(key.toString() + "\t" + value.toString());
 			context.write(word, one);
 		}
 	}
@@ -180,6 +180,12 @@ public class WordCount {
 	public static class FeatureReducer extends
 			Reducer<Text, IntWritable, Text, IntWritable> {
 		private IntWritable result = new IntWritable();
+		private MultipleOutputs<Text, IntWritable> mos;
+
+		protected void setup(Context context) throws IOException,
+				InterruptedException {
+			mos = new MultipleOutputs<Text, IntWritable>(context);
+		}
 
 		public void reduce(Text key, Iterable<IntWritable> values,
 				Context context) throws IOException, InterruptedException {
@@ -188,7 +194,15 @@ public class WordCount {
 				sum += val.get();
 			}
 			result.set(sum);
-			context.write(key, result);
+			// context.write(key, result);
+			String str[] = key.toString().split("\t");
+			assert(str.length == 2);
+			mos.write(new Text(str[1]), result, str[0]);
+		}
+
+		protected void cleanup(Context context) throws IOException,
+				InterruptedException {
+			mos.close();
 		}
 	}
 
@@ -197,11 +211,10 @@ public class WordCount {
 		job.setJarByClass(WordCount.class);
 		job.setInputFormatClass(CategoryInputFormat.class);
 		job.setMapperClass(FeatureMapper.class);
-		job.setCombinerClass(FeatureReducer.class);
 		job.setReducerClass(FeatureReducer.class);
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(IntWritable.class);
-		
+
 		Path input = new Path(
 				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/Country");
 		Path output = new Path(
