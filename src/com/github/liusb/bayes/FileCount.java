@@ -1,4 +1,4 @@
-package com.github.liusb.bayes.training;
+package com.github.liusb.bayes;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -30,7 +30,7 @@ import org.apache.hadoop.util.StringUtils;
 
 public class FileCount {
 
-	public static class FileRecordReader extends RecordReader<Text, Text> {
+	public static class FileNameReader extends RecordReader<Text, Text> {
 
 		private FileStatus[] files = null;
 		private Text key = null;
@@ -144,7 +144,7 @@ public class FileCount {
 		public RecordReader<Text, Text> createRecordReader(InputSplit split,
 				TaskAttemptContext context) throws IOException,
 				InterruptedException {
-			return new FileRecordReader();
+			return new FileNameReader();
 		}
 
 	}
@@ -173,10 +173,9 @@ public class FileCount {
 			JobClient client = new JobClient(conf);
 			RunningJob job = client.getJob(JobID.forName(context.getJobID()
 					.toString()));
-			all_count = (double) job
-					.getCounters()
-					.findCounter("org.apache.hadoop.mapred.Task$Counter",
-							"MAP_OUTPUT_RECORDS").getValue();
+			all_count = (double) job.getCounters().findCounter("org.apache.hadoop.mapred.Task$Counter",
+					"MAP_OUTPUT_RECORDS").getValue();
+			assert(all_count != 0);
 		}
 
 		public void reduce(Text key, Iterable<IntWritable> values,
@@ -185,7 +184,7 @@ public class FileCount {
 			for (IntWritable val : values) {
 				sum += val.get();
 			}
-			result.set(sum / all_count);
+			result.set(Math.log(sum / all_count));
 			context.write(key, result);
 		}
 	}

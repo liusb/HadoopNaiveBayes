@@ -1,4 +1,4 @@
-package com.github.liusb.bayes.training;
+package com.github.liusb.bayes;
 
 import org.apache.hadoop.conf.Configuration;
 
