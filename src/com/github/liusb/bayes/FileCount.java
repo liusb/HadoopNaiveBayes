@@ -175,7 +175,6 @@ public class FileCount {
 					.toString()));
 			all_count = (double) job.getCounters().findCounter("org.apache.hadoop.mapred.Task$Counter",
 					"MAP_OUTPUT_RECORDS").getValue();
-			assert(all_count != 0);
 		}
 
 		public void reduce(Text key, Iterable<IntWritable> values,

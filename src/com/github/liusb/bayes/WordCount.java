@@ -219,11 +219,10 @@ public class WordCount {
 			} else {
 				result.set(sum);
 				String str[] = key.toString().split("\t");
-				assert (str.length == 1 || str.length == 2);
 				if (str.length == 2) {
-					mos.write(new Text(str[1]), result, str[0]);
+					mos.write(new Text(str[1]), result, "WORD/"+str[0]);
 				} else if (str.length == 1) {
-					mos.write(key, result, "CATEGORY_WORD_COUNT");
+					mos.write(key, result, "CATEGORY/result");
 				}
 			}
 		}
@@ -259,9 +258,7 @@ public class WordCount {
 		}
 
 		Long all_count = job.getCounters().findCounter("FEATURE", "ALL").getValue();
-		assert (all_count != 0);
-		Path feature = new Path(
-				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/FEATURE_NUM_RESULT.txt");
+		Path feature = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/FeatureNum/result.txt");
 		FSDataOutputStream out = fs.create(feature);
 		out.write(all_count.toString().getBytes("UTF-8"));
 		out.close();

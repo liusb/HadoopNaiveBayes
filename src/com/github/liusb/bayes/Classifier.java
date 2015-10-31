@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 import org.apache.hadoop.conf.Configuration;
@@ -11,8 +12,6 @@ import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.DoubleWritable;
-import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.InputSplit;
@@ -20,18 +19,15 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordReader;
-import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.LineReader;
 import org.apache.hadoop.util.StringUtils;
 
-import com.github.liusb.bayes.WordCount.CategoryInputFormat;
-
 
 public class Classifier {
-	
+		
 	public static class SingleFileRecordReader extends RecordReader<Text, Text> {
 
 		private Configuration conf = null;
@@ -62,7 +58,7 @@ public class Classifier {
 				return false;
 			}
 			Path filePath = files[index].getPath();
-			key.set(filePath.getParent().getName() + "|" + filePath.getName());
+			key.set(filePath.getParent().getName() + "/" + filePath.getName());
 			int newSize = 0;
 			StringBuffer totalValue = new StringBuffer();
 			in = new LineReader(fs.open(filePath), conf);
@@ -76,6 +72,7 @@ public class Classifier {
 			value.set(totalValue.toString());
 			in.close();
 			in = null;
+			index++;
 			return true;
 		}
 
@@ -162,9 +159,8 @@ public class Classifier {
 
 
 	public static class ClassifierMapper extends
-			Mapper<Text, Text, Text, DoubleWritable> {
+			Mapper<Text, Text, Text, Text> {
 		
-		private final static DoubleWritable weight = new DoubleWritable();
 		private Text text = new Text();
 		private HashMap<String, HashMap<String, Double>> wordWeight = new HashMap<String, HashMap<String, Double>>();
 		private HashMap<String, Double> fileWeight = new HashMap<String, Double>();
@@ -172,42 +168,97 @@ public class Classifier {
 
 		protected void setup(Context context) throws IOException, InterruptedException {
 
-			Path path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/FEATURE_NUM_RESULT.txt");
+			Path path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/FeatureNum/result.txt");
 			FileSystem fs = path.getFileSystem(context.getConfiguration());
 			LineReader in = new LineReader(fs.open(path), context.getConfiguration());
-			int newSize = 0;
+			int newSize = in.readLine(text);
+			long feature_num_result = Long.parseLong(text.toString());
+			in.close();
+			
+			path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/FileCount/[^_]*");
+			FileStatus[] files = fs.globStatus(path);
+			in = new LineReader(fs.open(files[0].getPath()), context.getConfiguration());
+			newSize = 0;
+			String[] splitResult;
 			while (true) {
-				// TODO
+				newSize = in.readLine(text);
 				if(newSize == 0){
 					break;
 				}
+				splitResult = text.toString().split("\t");
+				fileWeight.put(splitResult[0], Double.parseDouble(splitResult[1]));
 			}
 			in.close();
+			
+			path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/CATEGORY/");
+			files = fs.listStatus(path);
+			in = new LineReader(fs.open(files[0].getPath()), context.getConfiguration());
+			newSize = 0;
+			while (true) {
+				newSize = in.readLine(text);
+				if(newSize == 0){
+					break;
+				}
+				splitResult = text.toString().split("\t");
+				lossWeight.put(splitResult[0], Double.parseDouble(splitResult[1]));
+			}
+			in.close();
+						
+			path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/WORD/");
+			files = fs.listStatus(path);
+			for(FileStatus f: files) {
+				if(f.getLen() == 0) {
+					continue;
+				}
+				String category = f.getPath().getName().split("-")[0];
+				HashMap<String, Double> hashWeight = new HashMap<String, Double>();
+				in = new LineReader(fs.open(f.getPath()), context.getConfiguration());
+				double count = 0;				
+				double all = lossWeight.get(category) + feature_num_result;
+				newSize = 0;
+				while (true) {
+					newSize = in.readLine(text);
+					if(newSize == 0){
+						break;
+					}
+					splitResult = text.toString().split("\t");
+					count = Double.parseDouble(splitResult[1]) + 1;
+					hashWeight.put(splitResult[0], Math.log(count/all));
+				}
+				wordWeight.put(category, hashWeight);
+				lossWeight.put(category, Math.log(1/all));
+				in.close();
+			}
 		}
 
 		public void map(Text key, Text value, Context context)
 				throws IOException, InterruptedException {
-			StringTokenizer itr = new StringTokenizer(value.toString());
-			while (itr.hasMoreTokens()) {
-				text.set(itr.nextToken());
-				context.write(text, weight);
+			String token;
+			double tokenLoss;
+			double categoryWeight;
+			double maxWeight = Double.NEGATIVE_INFINITY;
+			String maxCategory = "";
+			for (Map.Entry<String, HashMap<String, Double>> category : wordWeight.entrySet()) {
+				tokenLoss = lossWeight.get(category.getKey());				
+				categoryWeight = fileWeight.get(category.getKey());
+				StringTokenizer itr = new StringTokenizer(value.toString());
+				while (itr.hasMoreTokens()) {
+					token = itr.nextToken();
+					if(category.getValue().containsKey(token)){
+						categoryWeight += category.getValue().get(token);
+					}
+					else {
+						categoryWeight += tokenLoss;
+					}
+				}
+				if(categoryWeight > maxWeight) {
+					maxWeight = categoryWeight;
+					maxCategory = category.getKey();
+				}
 			}
+			context.write(key, new Text(maxCategory));
 		}
-	}
-
-	public static class ClassifierReducer extends
-			Reducer<Text, DoubleWritable, Text, Text> {
-		private IntWritable result = new IntWritable();
-
-		public void reduce(Text key, Iterable<IntWritable> values,
-				Context context) throws IOException, InterruptedException {
-			int sum = 0;
-			for (IntWritable val : values) {
-				sum += val.get();
-			}
-			result.set(sum);
-			//context.write(key, result);
-		}
+		
 	}
 
 	public static boolean run(Configuration conf) throws Exception {
@@ -216,18 +267,14 @@ public class Classifier {
 		job.setJarByClass(Classifier.class);
 		job.setInputFormatClass(DirInputFormat.class);
 		job.setMapperClass(ClassifierMapper.class);
-		job.setCombinerClass(ClassifierReducer.class);
-		job.setReducerClass(ClassifierReducer.class);
 		job.setOutputKeyClass(Text.class);
-		job.setOutputValueClass(IntWritable.class);
-		DirInputFormat.setInputPath(job, new Path(""));
-		FileOutputFormat.setOutputPath(job, new Path(""));
+		job.setOutputValueClass(Text.class);
 
 		Path input = new Path(
 				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/Industry");
 		Path output = new Path(
 				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/ClassifyResult");
-		CategoryInputFormat.setInputPath(job, input);
+		DirInputFormat.setInputPath(job, input);
 		FileOutputFormat.setOutputPath(job, output);
 
 		FileSystem fs = output.getFileSystem(job.getConfiguration());
