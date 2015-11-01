@@ -64,7 +64,7 @@ public class Classifier {
 			in = new LineReader(fs.open(filePath), conf);
 			while (true) {
 				newSize = in.readLine(value);
-				if(newSize != 0) {
+				if(newSize == 0) {
 					break;
 				}
 				totalValue.append(value.toString()+"\n");
@@ -241,9 +241,9 @@ public class Classifier {
 			for (Map.Entry<String, HashMap<String, Double>> category : wordWeight.entrySet()) {
 				tokenLoss = lossWeight.get(category.getKey());				
 				categoryWeight = fileWeight.get(category.getKey());
-				StringTokenizer itr = new StringTokenizer(value.toString());
+				StringTokenizer itr = new StringTokenizer(value.toString());				
 				while (itr.hasMoreTokens()) {
-					token = itr.nextToken();
+					token = itr.nextToken();					
 					if(category.getValue().containsKey(token)){
 						categoryWeight += category.getValue().get(token);
 					}
@@ -255,6 +255,7 @@ public class Classifier {
 					maxWeight = categoryWeight;
 					maxCategory = category.getKey();
 				}
+				//context.write(key, new Text(category.getKey() + "\t" + categoryWeight));
 			}
 			context.write(key, new Text(maxCategory));
 		}
