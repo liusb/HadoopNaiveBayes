@@ -1,22 +1,17 @@
 package com.github.liusb.bayes;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
@@ -102,51 +97,7 @@ public class Classifier {
 
 	}
 
-	public static class DirInputFormat extends InputFormat<Text, Text> {
-
-		public static void setInputPath(JobContext context, Path path)
-				throws IOException {
-			Configuration conf = context.getConfiguration();
-			path = path.getFileSystem(conf).makeQualified(path);
-			String dir = StringUtils.escapeString(path.toString());
-			conf.set("mapred.input.dir", dir);
-		}
-
-		public static Path getInputPath(JobContext context) throws IOException {
-			String dir = context.getConfiguration().get("mapred.input.dir", "");
-			if (dir.length() == 0) {
-				throw new IOException("No input paths specified in job");
-			}
-			return new Path(StringUtils.unEscapeString(dir));
-		}
-
-		@Override
-		public List<InputSplit> getSplits(JobContext context)
-				throws IOException {
-
-			List<InputSplit> splits = new ArrayList<InputSplit>();
-			List<FileStatus> categoryDirs = new ArrayList<FileStatus>();
-			Path inputDir = getInputPath(context);
-			FileSystem fs = inputDir.getFileSystem(context.getConfiguration());
-
-			for (FileStatus stat : fs.listStatus(inputDir)) {
-				categoryDirs.add(stat);
-			}
-
-			for (FileStatus dir : categoryDirs) {
-				Path path = dir.getPath();
-				long length = dir.getLen();
-				if ((length != 0)) {
-					BlockLocation[] blkLocations = fs.getFileBlockLocations(
-							dir, 0, length);
-					splits.add(new FileSplit(path, 0, length, blkLocations[0]
-							.getHosts()));
-				} else {
-					splits.add(new FileSplit(path, 0, length, new String[0]));
-				}
-			}
-			return splits;
-		}
+	public static class DirInputFormat extends BaseInputFormat {
 
 		@Override
 		public RecordReader<Text, Text> createRecordReader(InputSplit split,
@@ -162,22 +113,29 @@ public class Classifier {
 			Mapper<Text, Text, Text, Text> {
 		
 		private Text text = new Text();
-		private HashMap<String, HashMap<String, Double>> wordWeight = new HashMap<String, HashMap<String, Double>>();
-		private HashMap<String, Double> fileWeight = new HashMap<String, Double>();
+		private HashMap<String, HashMap<String, Double>> featureWeight = new HashMap<String, HashMap<String, Double>>();
+		private HashMap<String, Double> priorWeight = new HashMap<String, Double>();
 		private HashMap<String, Double> lossWeight = new HashMap<String, Double>();
 
 		protected void setup(Context context) throws IOException, InterruptedException {
 
-			Path path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/FeatureNum/result.txt");
-			FileSystem fs = path.getFileSystem(context.getConfiguration());
-			LineReader in = new LineReader(fs.open(path), context.getConfiguration());
+			Configuration conf = context.getConfiguration();
+			String prior_path = StringUtils.unEscapeString(conf.get("bayes.training.prior.dir", ""));
+			String feature_path = StringUtils.unEscapeString(conf.get("bayes.training.feature.dir", ""));
+			if (prior_path.length() == 0 || feature_path.length() == 0) {
+				throw new IOException("No training result paths specified in job");
+			}
+			
+			Path path = new Path(feature_path+"/FeatureNum/result.txt");
+			FileSystem fs = path.getFileSystem(conf);
+			LineReader in = new LineReader(fs.open(path), conf);
 			int newSize = in.readLine(text);
 			long feature_num_result = Long.parseLong(text.toString());
 			in.close();
 			
-			path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/FileCount/[^_]*");
+			path = new Path(prior_path+"/[^_]*");
 			FileStatus[] files = fs.globStatus(path);
-			in = new LineReader(fs.open(files[0].getPath()), context.getConfiguration());
+			in = new LineReader(fs.open(files[0].getPath()), conf);
 			newSize = 0;
 			String[] splitResult;
 			while (true) {
@@ -186,13 +144,13 @@ public class Classifier {
 					break;
 				}
 				splitResult = text.toString().split("\t");
-				fileWeight.put(splitResult[0], Double.parseDouble(splitResult[1]));
+				priorWeight.put(splitResult[0], Double.parseDouble(splitResult[1]));
 			}
 			in.close();
 			
-			path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/CATEGORY/");
+			path = new Path(feature_path+"/CATEGORY/");
 			files = fs.listStatus(path);
-			in = new LineReader(fs.open(files[0].getPath()), context.getConfiguration());
+			in = new LineReader(fs.open(files[0].getPath()), conf);
 			newSize = 0;
 			while (true) {
 				newSize = in.readLine(text);
@@ -204,7 +162,7 @@ public class Classifier {
 			}
 			in.close();
 						
-			path = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/WORD/");
+			path = new Path(feature_path+"/WORD/");
 			files = fs.listStatus(path);
 			for(FileStatus f: files) {
 				if(f.getLen() == 0) {
@@ -212,7 +170,7 @@ public class Classifier {
 				}
 				String category = f.getPath().getName().split("-")[0];
 				HashMap<String, Double> hashWeight = new HashMap<String, Double>();
-				in = new LineReader(fs.open(f.getPath()), context.getConfiguration());
+				in = new LineReader(fs.open(f.getPath()), conf);
 				double count = 0;				
 				double all = lossWeight.get(category) + feature_num_result;
 				newSize = 0;
@@ -225,7 +183,7 @@ public class Classifier {
 					count = Double.parseDouble(splitResult[1]) + 1;
 					hashWeight.put(splitResult[0], Math.log(count/all));
 				}
-				wordWeight.put(category, hashWeight);
+				featureWeight.put(category, hashWeight);
 				lossWeight.put(category, Math.log(1/all));
 				in.close();
 			}
@@ -238,9 +196,9 @@ public class Classifier {
 			double categoryWeight;
 			double maxWeight = Double.NEGATIVE_INFINITY;
 			String maxCategory = "";
-			for (Map.Entry<String, HashMap<String, Double>> category : wordWeight.entrySet()) {
+			for (Map.Entry<String, HashMap<String, Double>> category : featureWeight.entrySet()) {
 				tokenLoss = lossWeight.get(category.getKey());				
-				categoryWeight = fileWeight.get(category.getKey());
+				categoryWeight = priorWeight.get(category.getKey());
 				StringTokenizer itr = new StringTokenizer(value.toString());				
 				while (itr.hasMoreTokens()) {
 					token = itr.nextToken();					
@@ -262,24 +220,20 @@ public class Classifier {
 		
 	}
 
-	public static boolean run(Configuration conf) throws Exception {
+	public static boolean run(Configuration conf, Path input, Path output, 
+			Path prior_path, Path feature_path) throws Exception {
 		
+		conf.set("bayes.training.prior.dir", StringUtils.escapeString(prior_path.toString()));
+		conf.set("bayes.training.feature.dir", StringUtils.escapeString(feature_path.toString()));
 		Job job = new Job(conf, "Classifier");
 		job.setJarByClass(Classifier.class);
 		job.setInputFormatClass(DirInputFormat.class);
 		job.setMapperClass(ClassifierMapper.class);
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(Text.class);
-
-		Path input = new Path(
-				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/Industry");
-		Path output = new Path(
-				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/ClassifyResult");
+		
 		DirInputFormat.setInputPath(job, input);
 		FileOutputFormat.setOutputPath(job, output);
-
-		FileSystem fs = output.getFileSystem(job.getConfiguration());
-		fs.delete(output, true);
 
 		return job.waitForCompletion(true);
 

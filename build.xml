@@ -84,7 +84,7 @@
 	    <jar jarfile="F://WorkSpace//javaWorkspace//NaiveBayes.jar" basedir="bin"/>
 	</target>
     <target name="NaiveBayes" depends="build">
-        <java classname="com.github.liusb.bayes.TrainingJob" failonerror="true" fork="yes">
+        <java classname="com.github.liusb.bayes.JobSubmit" failonerror="true" fork="yes">
             <classpath refid="NaiveBayes.classpath"/>
         </java>
     </target>

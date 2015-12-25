@@ -1,21 +1,15 @@
 package com.github.liusb.bayes;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -24,9 +18,8 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;
 import org.apache.hadoop.util.LineReader;
-import org.apache.hadoop.util.StringUtils;
 
-public class WordCount {
+public class FeatureCount {
 
 	public static class FeatureRecordReader extends RecordReader<Text, Text> {
 
@@ -109,52 +102,7 @@ public class WordCount {
 
 	}
 
-	public static class CategoryInputFormat extends InputFormat<Text, Text> {
-
-		public static void setInputPath(JobContext context, Path path)
-				throws IOException {
-			Configuration conf = context.getConfiguration();
-			path = path.getFileSystem(conf).makeQualified(path);
-			String dir = StringUtils.escapeString(path.toString());
-			conf.set("mapred.input.dir", dir);
-		}
-
-		public static Path getInputPath(JobContext context) throws IOException {
-			String dir = context.getConfiguration().get("mapred.input.dir", "");
-			if (dir.length() == 0) {
-				throw new IOException("No input paths specified in job");
-			}
-			return new Path(StringUtils.unEscapeString(dir));
-		}
-
-		@Override
-		public List<InputSplit> getSplits(JobContext context)
-				throws IOException {
-
-			List<InputSplit> splits = new ArrayList<InputSplit>();
-			List<FileStatus> categoryDirs = new ArrayList<FileStatus>();
-			Path inputDir = getInputPath(context);
-			FileSystem fs = inputDir.getFileSystem(context.getConfiguration());
-
-			for (FileStatus stat : fs.listStatus(inputDir)) {
-				categoryDirs.add(stat);
-			}
-
-			for (FileStatus dir : categoryDirs) {
-				Path path = dir.getPath();
-				long length = dir.getLen();
-				if ((length != 0)) {
-					BlockLocation[] blkLocations = fs.getFileBlockLocations(
-							dir, 0, length);
-					splits.add(new FileSplit(path, 0, length, blkLocations[0]
-							.getHosts()));
-				} else {
-					splits.add(new FileSplit(path, 0, length, new String[0]));
-				}
-			}
-
-			return splits;
-		}
+	public static class CategoryInputFormat extends BaseInputFormat {
 
 		@Override
 		public RecordReader<Text, Text> createRecordReader(InputSplit split,
@@ -233,9 +181,9 @@ public class WordCount {
 		}
 	}
 
-	public static boolean run(Configuration conf) throws Exception {
+	public static boolean run(Configuration conf, Path input, Path output) throws Exception {
 		Job job = new Job(conf, "word count");
-		job.setJarByClass(WordCount.class);
+		job.setJarByClass(FeatureCount.class);
 		job.setInputFormatClass(CategoryInputFormat.class);
 		job.setMapperClass(FeatureMapper.class);
 		job.setCombinerClass(FeatureCombiner.class);
@@ -243,22 +191,17 @@ public class WordCount {
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(IntWritable.class);
 
-		Path input = new Path(
-				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/Country");
-		Path output = new Path(
-				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount");
 		CategoryInputFormat.setInputPath(job, input);
 		FileOutputFormat.setOutputPath(job, output);
 
 		FileSystem fs = output.getFileSystem(job.getConfiguration());
-		fs.delete(output, true);
 
 		if (job.waitForCompletion(true) == false) {
 			return false;
 		}
 
 		Long all_count = job.getCounters().findCounter("FEATURE", "ALL").getValue();
-		Path feature = new Path("hdfs://192.168.56.120:9000/user/hadoop/Bayes/WordCount/FeatureNum/result.txt");
+		Path feature = new Path(output.toUri().toString() + "/FeatureNum/result.txt");
 		FSDataOutputStream out = fs.create(feature);
 		out.write(all_count.toString().getBytes("UTF-8"));
 		out.close();

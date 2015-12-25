@@ -1,11 +1,7 @@
 package com.github.liusb.bayes;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -18,17 +14,14 @@ import org.apache.hadoop.mapred.JobID;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.Reducer;
-import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
-import org.apache.hadoop.util.StringUtils;
 
-public class FileCount {
+public class PriorCount {
 
 	public static class FileNameReader extends RecordReader<Text, Text> {
 
@@ -38,13 +31,11 @@ public class FileCount {
 		private int pos;
 
 		@Override
-		public void initialize(InputSplit genericSplit,
-				TaskAttemptContext context) throws IOException,
-				InterruptedException {
+		public void initialize(InputSplit genericSplit, TaskAttemptContext context) 
+				throws IOException, InterruptedException {
 			FileSplit split = (FileSplit) genericSplit;
-			Configuration job = context.getConfiguration();
 			Path dir = split.getPath();
-			FileSystem fs = dir.getFileSystem(job);
+			FileSystem fs = dir.getFileSystem(context.getConfiguration());
 			files = fs.listStatus(dir);
 			pos = 0;
 		}
@@ -60,7 +51,9 @@ public class FileCount {
 			if (files == null || pos == files.length) {
 				return false;
 			} else {
+				// 设置key为当前文件的父目录，即为该文件的分类
 				key.set(files[pos].getPath().getParent().getName());
+				// 设置value为文件名
 				value.set(files[pos].getPath().getName());
 				pos++;
 				return true;
@@ -93,52 +86,7 @@ public class FileCount {
 
 	}
 
-	public static class DirInputFormat extends InputFormat<Text, Text> {
-
-		public static void setInputPath(JobContext context, Path path)
-				throws IOException {
-			Configuration conf = context.getConfiguration();
-			path = path.getFileSystem(conf).makeQualified(path);
-			String dir = StringUtils.escapeString(path.toString());
-			conf.set("mapred.input.dir", dir);
-		}
-
-		public static Path getInputPath(JobContext context) throws IOException {
-			String dir = context.getConfiguration().get("mapred.input.dir", "");
-			if (dir.length() == 0) {
-				throw new IOException("No input paths specified in job");
-			}
-			return new Path(StringUtils.unEscapeString(dir));
-		}
-
-		@Override
-		public List<InputSplit> getSplits(JobContext context)
-				throws IOException, InterruptedException {
-
-			List<InputSplit> splits = new ArrayList<InputSplit>();
-			List<FileStatus> categoryDirs = new ArrayList<FileStatus>();
-			Path inputDir = getInputPath(context);
-			FileSystem fs = inputDir.getFileSystem(context.getConfiguration());
-
-			for (FileStatus stat : fs.listStatus(inputDir)) {
-				categoryDirs.add(stat);
-			}
-
-			for (FileStatus dir : categoryDirs) {
-				Path path = dir.getPath();
-				long length = dir.getLen();
-				if ((length != 0)) {
-					BlockLocation[] blkLocations = fs.getFileBlockLocations(
-							dir, 0, length);
-					splits.add(new FileSplit(path, 0, length, blkLocations[0]
-							.getHosts()));
-				} else {
-					splits.add(new FileSplit(path, 0, length, new String[0]));
-				}
-			}
-
-			return splits;
-		}
+	public static class DirInputFormat extends BaseInputFormat {
 
 		@Override
 		public RecordReader<Text, Text> createRecordReader(InputSplit split,
@@ -188,9 +136,9 @@ public class FileCount {
 		}
 	}
 
-	public static boolean run(Configuration conf) throws Exception {
+	public static boolean run(Configuration conf, Path input, Path output) throws Exception {
 		Job job = new Job(conf, "file count");
-		job.setJarByClass(FileCount.class);
+		job.setJarByClass(PriorCount.class);
 		job.setInputFormatClass(DirInputFormat.class);
 		job.setMapperClass(FileCountMapper.class);
 		job.setReducerClass(FileCountReducer.class);
@@ -198,16 +146,9 @@ public class FileCount {
 		job.setMapOutputValueClass(IntWritable.class);
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(DoubleWritable.class);
-
-		Path input = new Path(
-				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/Country");
-		Path output = new Path(
-				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/FileCount");
+		
 		DirInputFormat.setInputPath(job, input);
 		FileOutputFormat.setOutputPath(job, output);
-
-		FileSystem fs = output.getFileSystem(job.getConfiguration());
-		fs.delete(output, true);
 
 		return job.waitForCompletion(true);
 	}
