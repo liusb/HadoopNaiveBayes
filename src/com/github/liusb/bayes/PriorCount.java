@@ -1,6 +1,9 @@
 package com.github.liusb.bayes;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -18,25 +21,29 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
-import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class PriorCount {
 
 	public static class FileNameReader extends RecordReader<Text, Text> {
 
-		private FileStatus[] files = null;
+		private List<FileStatus> files = new ArrayList<FileStatus>();
 		private Text key = null;
 		private Text value = null;
 		private int pos;
 
 		@Override
-		public void initialize(InputSplit genericSplit, TaskAttemptContext context) 
-				throws IOException, InterruptedException {
-			FileSplit split = (FileSplit) genericSplit;
-			Path dir = split.getPath();
-			FileSystem fs = dir.getFileSystem(context.getConfiguration());
-			files = fs.listStatus(dir);
+		public void initialize(InputSplit genericSplit,
+				TaskAttemptContext context) throws IOException,
+				InterruptedException {
+			MultiPathSplit split = (MultiPathSplit) genericSplit;
+			Path[] dirs = split.getPaths();
+			for (Path dir : dirs) {
+				FileSystem fs = dir.getFileSystem(context.getConfiguration());
+				for (FileStatus file : fs.listStatus(dir)) {
+					files.add(file);
+				}
+			}
 			pos = 0;
 		}
 
@@ -48,13 +55,12 @@ public class PriorCount {
 			if (value == null) {
 				value = new Text();
 			}
-			if (files == null || pos == files.length) {
+			if (pos == files.size()) {
 				return false;
 			} else {
-				// 设置key为当前文件的父目录，即为该文件的分类
-				key.set(files[pos].getPath().getParent().getName());
-				// 设置value为文件名
-				value.set(files[pos].getPath().getName());
+				Path path = files.get(pos).getPath();
+				key.set(path.getParent().getName());
+				value.set(path.getName());
 				pos++;
 				return true;
 			}
@@ -72,10 +78,10 @@ public class PriorCount {
 
 		@Override
 		public float getProgress() throws IOException, InterruptedException {
-			if (files == null || files.length == 0) {
+			if (files.size() == 0) {
 				return 0.0f;
 			} else {
-				return Math.min(1.0f, pos / (float) files.length);
+				return Math.min(1.0f, pos / (float) files.size());
 			}
 		}
 
@@ -121,8 +127,10 @@ public class PriorCount {
 			JobClient client = new JobClient(conf);
 			RunningJob job = client.getJob(JobID.forName(context.getJobID()
 					.toString()));
-			all_count = (double) job.getCounters().findCounter("org.apache.hadoop.mapred.Task$Counter",
-					"MAP_OUTPUT_RECORDS").getValue();
+			all_count = (double) job
+					.getCounters()
+					.findCounter("org.apache.hadoop.mapred.Task$Counter",
+							"MAP_OUTPUT_RECORDS").getValue();
 		}
 
 		public void reduce(Text key, Iterable<IntWritable> values,
@@ -136,7 +144,8 @@ public class PriorCount {
 		}
 	}
 
-	public static boolean run(Configuration conf, Path input, Path output) throws Exception {
+	public static boolean run(Configuration conf, Path input, Path output)
+			throws Exception {
 		Job job = new Job(conf, "file count");
 		job.setJarByClass(PriorCount.class);
 		job.setInputFormatClass(DirInputFormat.class);
@@ -146,7 +155,7 @@ public class PriorCount {
 		job.setMapOutputValueClass(IntWritable.class);
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(DoubleWritable.class);
-		
+
 		DirInputFormat.setInputPath(job, input);
 		FileOutputFormat.setOutputPath(job, output);
 

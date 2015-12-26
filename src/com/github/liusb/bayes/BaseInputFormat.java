@@ -2,10 +2,11 @@ package com.github.liusb.bayes;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -13,9 +14,7 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.InputFormat;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.JobContext;
-import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.util.StringUtils;
-
 
 public abstract class BaseInputFormat extends InputFormat<Text, Text> {
 
@@ -36,8 +35,8 @@ public abstract class BaseInputFormat extends InputFormat<Text, Text> {
 	}
 
 	@Override
-	public List<InputSplit> getSplits(JobContext context)
-			throws IOException, InterruptedException {
+	public List<InputSplit> getSplits(JobContext context) throws IOException,
+			InterruptedException {
 
 		List<InputSplit> splits = new ArrayList<InputSplit>();
 		List<FileStatus> categoryDirs = new ArrayList<FileStatus>();
@@ -48,17 +47,27 @@ public abstract class BaseInputFormat extends InputFormat<Text, Text> {
 			categoryDirs.add(stat);
 		}
 
-		// 按分类进行分片，每个分类作为一个InputSplit
-		for (FileStatus dir : categoryDirs) {
-			Path path = dir.getPath();
-			long length = dir.getLen();
-			if ((length != 0)) {
-				BlockLocation[] blkLocations = fs.getFileBlockLocations(
-						dir, 0, length);
-				splits.add(new FileSplit(path, 0, length, blkLocations[0]
-						.getHosts()));
-			} else {
-				splits.add(new FileSplit(path, 0, length, new String[0]));
+		int splitSize = 4;
+		int splitLength = categoryDirs.size() / splitSize;
+		for (int i = 1; i <= splitSize; i++) {
+			int start = (i - 1) * splitLength;
+			if (i == splitSize) {
+				splitLength = categoryDirs.size() - start;
+			}
+			Path[] paths = new Path[splitLength];
+			Set<String> hosts = new HashSet<String>();
+			for (int j = 0; j < splitLength; j++) {
+				FileStatus stat = categoryDirs.get(start + j);
+				paths[j] = stat.getPath();
+				FileStatus file = fs.listStatus(paths[j])[0];
+				for (String host : fs.getFileBlockLocations(file, 0,
+						file.getLen())[0].getHosts()) {
+					hosts.add(host);
+				}
+			}
+			if ((splitLength != 0)) {
+				splits.add(new MultiPathSplit(paths, splitLength, hosts
+						.toArray(new String[0])));
 			}
 		}
 

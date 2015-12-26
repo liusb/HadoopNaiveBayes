@@ -1,6 +1,9 @@
 package com.github.liusb.bayes;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -14,7 +17,6 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
-import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;
 import org.apache.hadoop.util.LineReader;
@@ -23,45 +25,46 @@ public class FeatureCount {
 
 	public static class FeatureRecordReader extends RecordReader<Text, Text> {
 
-		private FileStatus[] files = null;
-		private Text key = null;
-		private Text value = null;
+		private List<FileStatus> files = new ArrayList<FileStatus>();
+		private Text key = new Text();
+		private Text value = new Text();
 		private LineReader in = null;
+		private Configuration conf;
 		private int index;
 		private long curlength;
 		private long alllength;
-		private FileSystem fs;
-		private Configuration job;
 
 		@Override
 		public void initialize(InputSplit genericSplit,
 				TaskAttemptContext context) throws IOException,
 				InterruptedException {
-			FileSplit split = (FileSplit) genericSplit;
-			Path dir = split.getPath();
-			job = context.getConfiguration();
-			fs = dir.getFileSystem(job);
-			key = new Text();
-			value = new Text();
-			key.set(dir.getName());
-			files = fs.listStatus(dir);
+			MultiPathSplit split = (MultiPathSplit) genericSplit;
+			Path[] dirs = split.getPaths();
+			alllength = 0;
+			conf = context.getConfiguration();
+			for (Path dir : dirs) {
+				FileSystem fs = dir.getFileSystem(conf);
+				for (FileStatus file : fs.listStatus(dir)) {
+					files.add(file);
+					alllength += file.getLen();
+				}
+			}
 			index = 0;
 			curlength = 0;
-			alllength = 0;
-			for (FileStatus st : files) {
-				alllength += st.getLen();
-			}
 		}
 
 		@Override
 		public boolean nextKeyValue() throws IOException, InterruptedException {
-			if (files == null || curlength == alllength) {
+			if (curlength == alllength) {
 				return false;
 			}
 			int newSize = 0;
-			while (index < files.length) {
+			while (index < files.size()) {
 				if (in == null) {
-					in = new LineReader(fs.open(files[index].getPath()), job);
+					Path path = files.get(index).getPath();
+					FileSystem fs = path.getFileSystem(conf);
+					in = new LineReader(fs.open(path), conf);
+					key.set(path.getParent().getName());
 				}
 				newSize = in.readLine(value);
 				if (newSize == 0) {
@@ -168,7 +171,7 @@ public class FeatureCount {
 				result.set(sum);
 				String str[] = key.toString().split("\t");
 				if (str.length == 2) {
-					mos.write(new Text(str[1]), result, "WORD/"+str[0]);
+					mos.write(new Text(str[1]), result, "WORD/" + str[0]);
 				} else if (str.length == 1) {
 					mos.write(key, result, "CATEGORY/result");
 				}
@@ -181,7 +184,8 @@ public class FeatureCount {
 		}
 	}
 
-	public static boolean run(Configuration conf, Path input, Path output) throws Exception {
+	public static boolean run(Configuration conf, Path input, Path output)
+			throws Exception {
 		Job job = new Job(conf, "word count");
 		job.setJarByClass(FeatureCount.class);
 		job.setInputFormatClass(CategoryInputFormat.class);
@@ -200,8 +204,10 @@ public class FeatureCount {
 			return false;
 		}
 
-		Long all_count = job.getCounters().findCounter("FEATURE", "ALL").getValue();
-		Path feature = new Path(output.toUri().toString() + "/FeatureNum/result.txt");
+		Long all_count = job.getCounters().findCounter("FEATURE", "ALL")
+				.getValue();
+		Path feature = new Path(output.toUri().toString()
+				+ "/FeatureNum/result.txt");
 		FSDataOutputStream out = fs.create(feature);
 		out.write(all_count.toString().getBytes("UTF-8"));
 		out.close();
