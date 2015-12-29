@@ -1,9 +1,7 @@
 package com.github.liusb.bayes;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.StringTokenizer;
 
@@ -23,30 +21,9 @@ import org.apache.hadoop.util.StringUtils;
 
 public class Classifier {
 
-	public static class SingleFileRecordReader extends RecordReader<Text, Text> {
+	public static class SingleFileRecordReader extends BaseRecordReader {
 
-		private Configuration conf = null;
-		private List<FileStatus> files = new ArrayList<FileStatus>();
-		private Text key = new Text();
-		private Text value = new Text();
-		private int index;
 		private LineReader in = null;
-
-		@Override
-		public void initialize(InputSplit genericSplit,
-				TaskAttemptContext context) throws IOException,
-				InterruptedException {
-			conf = context.getConfiguration();
-			MultiPathSplit split = (MultiPathSplit) genericSplit;
-			Path[] dirs = split.getPaths();
-			for (Path dir : dirs) {
-				FileSystem fs = dir.getFileSystem(context.getConfiguration());
-				for (FileStatus file : fs.listStatus(dir)) {
-					files.add(file);
-				}
-			}
-			index = 0;
-		}
 
 		@Override
 		public boolean nextKeyValue() throws IOException, InterruptedException {
@@ -71,31 +48,6 @@ public class Classifier {
 			index++;
 			return true;
 		}
-
-		@Override
-		public Text getCurrentKey() throws IOException, InterruptedException {
-			return key;
-		}
-
-		@Override
-		public Text getCurrentValue() throws IOException, InterruptedException {
-			return value;
-		}
-
-		@Override
-		public float getProgress() throws IOException, InterruptedException {
-			if (files.size() == 0) {
-				return 0.0f;
-			} else {
-				return Math.min(1.0f, index / (float) files.size());
-			}
-		}
-
-		@Override
-		public void close() throws IOException {
-			// nothing to do
-		}
-
 	}
 
 	public static class DirInputFormat extends BaseInputFormat {

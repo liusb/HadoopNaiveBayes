@@ -70,7 +70,6 @@ public abstract class BaseInputFormat extends InputFormat<Text, Text> {
 						.toArray(new String[0])));
 			}
 		}
-
 		return splits;
 	}
 

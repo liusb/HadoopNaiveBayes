@@ -1,8 +1,6 @@
 package com.github.liusb.bayes;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -23,14 +21,9 @@ import org.apache.hadoop.util.LineReader;
 
 public class FeatureCount {
 
-	public static class FeatureRecordReader extends RecordReader<Text, Text> {
+	public static class FeatureRecordReader extends BaseRecordReader {
 
-		private List<FileStatus> files = new ArrayList<FileStatus>();
-		private Text key = new Text();
-		private Text value = new Text();
 		private LineReader in = null;
-		private Configuration conf;
-		private int index;
 		private long curlength;
 		private long alllength;
 
@@ -78,31 +71,6 @@ public class FeatureCount {
 			}
 			return false;
 		}
-
-		@Override
-		public Text getCurrentKey() throws IOException, InterruptedException {
-			return key;
-		}
-
-		@Override
-		public Text getCurrentValue() throws IOException, InterruptedException {
-			return value;
-		}
-
-		@Override
-		public float getProgress() throws IOException, InterruptedException {
-			if (alllength == 0) {
-				return 0.0f;
-			} else {
-				return Math.min(1.0f, curlength / (float) alllength);
-			}
-		}
-
-		@Override
-		public void close() throws IOException {
-			// nothing to do
-		}
-
 	}
 
 	public static class CategoryInputFormat extends BaseInputFormat {
@@ -146,7 +114,6 @@ public class FeatureCount {
 			result.set(sum);
 			context.write(key, result);
 		}
-
 	}
 
 	public static class FeatureReducer extends
@@ -213,6 +180,5 @@ public class FeatureCount {
 		out.close();
 
 		return true;
-
 	}
 }

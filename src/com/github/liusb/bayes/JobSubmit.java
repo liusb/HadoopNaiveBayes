@@ -1,6 +1,5 @@
 package com.github.liusb.bayes;
 
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -29,7 +28,6 @@ public class JobSubmit {
 		fs.delete(feature_output, true);
 		FeatureCount.run(conf, training_input, feature_output);
 		
-
 		Path test_input = new Path(
 				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/"+base+"_test");
 		Path test_output = new Path(
