@@ -15,8 +15,7 @@ public class MultiPathSplit extends InputSplit implements Writable {
 	private long length;
 	private String[] hosts;
 
-	public MultiPathSplit() {
-	}
+	public MultiPathSplit() { }
 
 	public MultiPathSplit(Path[] paths, long length, String[] hosts) {
 		this.paths = paths;

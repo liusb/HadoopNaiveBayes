@@ -35,7 +35,6 @@ public class PriorCount {
 				return true;
 			}
 		}
-
 	}
 
 	public static class DirInputFormat extends BaseInputFormat {
@@ -46,12 +45,10 @@ public class PriorCount {
 				InterruptedException {
 			return new FileNameReader();
 		}
-
 	}
 
 	public static class FileCountMapper extends
 			Mapper<Text, Text, Text, IntWritable> {
-
 		private final static IntWritable one = new IntWritable(1);
 		private Text category = new Text();
 
@@ -92,7 +89,7 @@ public class PriorCount {
 
 	public static boolean run(Configuration conf, Path input, Path output)
 			throws Exception {
-		Job job = new Job(conf, "file count");
+		Job job = new Job(conf, "Prior Count");
 		job.setJarByClass(PriorCount.class);
 		job.setInputFormatClass(DirInputFormat.class);
 		job.setMapperClass(FileCountMapper.class);

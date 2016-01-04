@@ -13,7 +13,7 @@ public class JobSubmit {
 		conf.set("fs.default.name", "hdfs://192.168.56.120:9000");
 		conf.set("mapred.jar", "F://WorkSpace//javaWorkspace//NaiveBayes.jar");
 		
-		String base = "Industry";
+		String base = "Country";
 
 		Path training_input = new Path(
 				"hdfs://192.168.56.120:9000/user/hadoop/Bayes/"+base+"_training");

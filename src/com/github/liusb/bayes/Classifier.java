@@ -14,8 +14,10 @@ import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordReader;
+import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;
 import org.apache.hadoop.util.LineReader;
 import org.apache.hadoop.util.StringUtils;
 
@@ -40,7 +42,10 @@ public class Classifier {
 				if (newSize == 0) {
 					break;
 				}
-				totalValue.append(value.toString() + "\n");
+				String str = this.filter(value.toString());
+				if (str.length() != 0) {
+					totalValue.append(str + "\n");
+				}
 			}
 			value.set(totalValue.toString());
 			in.close();
@@ -58,7 +63,6 @@ public class Classifier {
 				InterruptedException {
 			return new SingleFileRecordReader();
 		}
-
 	}
 
 	public static class ClassifierMapper extends Mapper<Text, Text, Text, Text> {
@@ -67,10 +71,12 @@ public class Classifier {
 		private HashMap<String, HashMap<String, Double>> featureWeight = new HashMap<String, HashMap<String, Double>>();
 		private HashMap<String, Double> priorWeight = new HashMap<String, Double>();
 		private HashMap<String, Double> lossWeight = new HashMap<String, Double>();
+		private Text valueA = new Text("A");
+		private Text valueR = new Text("R");
+		private Text valueP = new Text("P");
 
 		protected void setup(Context context) throws IOException,
 				InterruptedException {
-
 			Configuration conf = context.getConfiguration();
 			String prior_path = StringUtils.unEscapeString(conf.get(
 					"bayes.training.prior.dir", ""));
@@ -171,14 +177,59 @@ public class Classifier {
 					maxCategory = category.getKey();
 				}
 			}
-			context.write(key, new Text(maxCategory));
+			String trueCategory = key.toString().split("/")[0];
+			Text calCategory = new Text(maxCategory);
+			context.write(key, calCategory);
+			if (maxCategory.equals(trueCategory)) {
+				context.write(calCategory, valueA);
+			}
+			context.write(new Text(trueCategory), valueR);
+			context.write(calCategory, valueP);
+		}
+	}
+
+	public static class ClassifierReducer extends
+			Reducer<Text, Text, Text, Text> {
+		private MultipleOutputs<Text, Text> mos;
+
+		protected void setup(Context context) throws IOException,
+				InterruptedException {
+			mos = new MultipleOutputs<Text, Text>(context);
 		}
 
+		public void reduce(Text key, Iterable<Text> values, Context context)
+				throws IOException, InterruptedException {
+			if (key.find("/") == -1) {
+				double countA = 0, countR = 0, countP = 0;
+				for (Text val : values) {
+					if (val.toString().equals("A")) {
+						countA++;
+					} else if (val.toString().equals("R")) {
+						countR++;
+					} else {
+						countP++;
+					}
+				}
+				double recall = countA / countR;
+				double precision = countA / countP;
+				double F1 = 2 * recall * precision / (recall + precision);
+				Text result = new Text("Recall:" + Double.toString(recall)
+						+ "\tPrecision:" + Double.toString(precision) + "\tF1:"
+						+ Double.toString(F1));
+				mos.write(key, result, "Fmeasure");
+			} else {
+				mos.write(key, values.iterator().next(), "result");
+			}
+		}
+
+		protected void cleanup(Context context) throws IOException,
+				InterruptedException {
+			mos.close();
+		}
 	}
 
 	public static boolean run(Configuration conf, Path input, Path output,
 			Path prior_path, Path feature_path) throws Exception {
-
 		conf.set("bayes.training.prior.dir",
 				StringUtils.escapeString(prior_path.toString()));
 		conf.set("bayes.training.feature.dir",
@@ -187,6 +238,7 @@ public class Classifier {
 		job.setJarByClass(Classifier.class);
 		job.setInputFormatClass(DirInputFormat.class);
 		job.setMapperClass(ClassifierMapper.class);
+		job.setReducerClass(ClassifierReducer.class);
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(Text.class);
 
@@ -194,6 +246,5 @@ public class Classifier {
 		FileOutputFormat.setOutputPath(job, output);
 
 		return job.waitForCompletion(true);
-
 	}
 }

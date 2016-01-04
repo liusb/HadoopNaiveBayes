@@ -37,17 +37,16 @@ public abstract class BaseInputFormat extends InputFormat<Text, Text> {
 	@Override
 	public List<InputSplit> getSplits(JobContext context) throws IOException,
 			InterruptedException {
-
 		List<InputSplit> splits = new ArrayList<InputSplit>();
 		List<FileStatus> categoryDirs = new ArrayList<FileStatus>();
 		Path inputDir = getInputPath(context);
 		FileSystem fs = inputDir.getFileSystem(context.getConfiguration());
-
 		for (FileStatus stat : fs.listStatus(inputDir)) {
 			categoryDirs.add(stat);
 		}
 
-		int splitSize = 4;
+		int splitSize = Integer.parseInt(context.getConfiguration().get(
+				"mapred.map.tasks", "2"));
 		int splitLength = categoryDirs.size() / splitSize;
 		for (int i = 1; i <= splitSize; i++) {
 			int start = (i - 1) * splitLength;
@@ -72,5 +71,4 @@ public abstract class BaseInputFormat extends InputFormat<Text, Text> {
 		}
 		return splits;
 	}
-
 }

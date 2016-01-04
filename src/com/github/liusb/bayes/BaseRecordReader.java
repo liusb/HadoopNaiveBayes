@@ -27,7 +27,7 @@ public abstract class BaseRecordReader extends RecordReader<Text, Text> {
 		MultiPathSplit split = (MultiPathSplit) genericSplit;
 		Path[] dirs = split.getPaths();
 		for (Path dir : dirs) {
-			FileSystem fs = dir.getFileSystem(context.getConfiguration());
+			FileSystem fs = dir.getFileSystem(conf);
 			for (FileStatus file : fs.listStatus(dir)) {
 				files.add(file);
 			}
@@ -53,6 +53,11 @@ public abstract class BaseRecordReader extends RecordReader<Text, Text> {
 
 	@Override
 	public void close() throws IOException {
-		// nothing to do
+	}
+	
+	public String filter(String text) {
+//		if (text.equals("said"))
+//			return "";
+		return text.replaceAll("[0-9,-./]", "");
 	}
 }

@@ -67,6 +67,11 @@ public class FeatureCount {
 					continue;
 				}
 				curlength += newSize;
+				String str = this.filter(value.toString());
+				if (str.length() == 0) {
+					continue;
+				}
+				value.set(str);
 				return true;
 			}
 			return false;
@@ -81,7 +86,6 @@ public class FeatureCount {
 				InterruptedException {
 			return new FeatureRecordReader();
 		}
-
 	}
 
 	public static class FeatureMapper extends
@@ -153,7 +157,7 @@ public class FeatureCount {
 
 	public static boolean run(Configuration conf, Path input, Path output)
 			throws Exception {
-		Job job = new Job(conf, "word count");
+		Job job = new Job(conf, "Feature Count");
 		job.setJarByClass(FeatureCount.class);
 		job.setInputFormatClass(CategoryInputFormat.class);
 		job.setMapperClass(FeatureMapper.class);
@@ -178,7 +182,6 @@ public class FeatureCount {
 		FSDataOutputStream out = fs.create(feature);
 		out.write(all_count.toString().getBytes("UTF-8"));
 		out.close();
-
 		return true;
 	}
 }
