@@ -21,87 +21,83 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class PriorCount {
 
-	public static class FileNameReader extends BaseRecordReader {
+  public static class FileNameReader extends BaseRecordReader {
 
-		@Override
-		public boolean nextKeyValue() throws IOException, InterruptedException {
-			if (index == files.size()) {
-				return false;
-			} else {
-				Path path = files.get(index).getPath();
-				key.set(path.getParent().getName());
-				value.set(path.getName());
-				index++;
-				return true;
-			}
-		}
-	}
+    @Override
+    public boolean nextKeyValue() throws IOException, InterruptedException {
+      if (index != files.size()) {
+        Path path = files.get(index).getPath();
+        key.set(path.getParent().getName());
+        value.set(path.getName());
+        index++;
+        return true;
+      }
+      return false;
+    }
+  }
 
-	public static class DirInputFormat extends BaseInputFormat {
+  public static class DirInputFormat extends BaseInputFormat {
 
-		@Override
-		public RecordReader<Text, Text> createRecordReader(InputSplit split,
-				TaskAttemptContext context) throws IOException,
-				InterruptedException {
-			return new FileNameReader();
-		}
-	}
+    @Override
+    public RecordReader<Text, Text> createRecordReader(InputSplit split,
+        TaskAttemptContext context) throws IOException, InterruptedException {
+      return new FileNameReader();
+    }
+  }
 
-	public static class FileCountMapper extends
-			Mapper<Text, Text, Text, IntWritable> {
-		private final static IntWritable one = new IntWritable(1);
-		private Text category = new Text();
+  public static class PriorCountMapper extends
+      Mapper<Text, Text, Text, IntWritable> {
+    private final static IntWritable one = new IntWritable(1);
+    private Text category = new Text();
 
-		public void map(Text key, Text value, Context context)
-				throws IOException, InterruptedException {
-			category.set(key);
-			context.write(category, one);
-		}
-	}
+    public void map(Text key, Text value, Context context) throws IOException,
+        InterruptedException {
+      category.set(key);
+      context.write(category, one);
+    }
+  }
 
-	public static class FileCountReducer extends
-			Reducer<Text, IntWritable, Text, DoubleWritable> {
-		private DoubleWritable result = new DoubleWritable();
-		private double all_count = 0;
+  public static class PriorCountReducer extends
+      Reducer<Text, IntWritable, Text, DoubleWritable> {
+    private DoubleWritable result = new DoubleWritable();
+    private double all_count = 0;
 
-		protected void setup(Context context) throws IOException,
-				InterruptedException {
-			JobConf conf = (JobConf) context.getConfiguration();
-			JobClient client = new JobClient(conf);
-			RunningJob job = client.getJob(JobID.forName(context.getJobID()
-					.toString()));
-			all_count = (double) job
-					.getCounters()
-					.findCounter("org.apache.hadoop.mapred.Task$Counter",
-							"MAP_OUTPUT_RECORDS").getValue();
-		}
+    protected void setup(Context context) throws IOException, InterruptedException {
+      JobConf conf = (JobConf) context.getConfiguration();
+      JobClient client = new JobClient(conf);
+      RunningJob job = client.getJob(JobID.forName(context.getJobID().toString()));
+      all_count = (double) job
+          .getCounters()
+          .findCounter("org.apache.hadoop.mapred.Task$Counter",
+              "MAP_OUTPUT_RECORDS").getValue();
+    }
 
-		public void reduce(Text key, Iterable<IntWritable> values,
-				Context context) throws IOException, InterruptedException {
-			int sum = 0;
-			for (IntWritable val : values) {
-				sum += val.get();
-			}
-			result.set(Math.log(sum / all_count));
-			context.write(key, result);
-		}
-	}
+    public void reduce(Text key, Iterable<IntWritable> values, Context context)
+        throws IOException, InterruptedException {
+      int sum = 0;
+      for (IntWritable val : values) {
+        sum += val.get();
+      }
+      result.set(Math.log(sum / all_count));
+      context.write(key, result);
+    }
+  }
 
-	public static boolean run(Configuration conf, Path input, Path output)
-			throws Exception {
-		Job job = new Job(conf, "Prior Count");
-		job.setJarByClass(PriorCount.class);
-		job.setInputFormatClass(DirInputFormat.class);
-		job.setMapperClass(FileCountMapper.class);
-		job.setReducerClass(FileCountReducer.class);
-		job.setMapOutputKeyClass(Text.class);
-		job.setMapOutputValueClass(IntWritable.class);
-		job.setOutputKeyClass(Text.class);
-		job.setOutputValueClass(DoubleWritable.class);
+  public static boolean run(Configuration conf, Path input, Path output)
+      throws Exception {
+    Job job = new Job(conf, "Prior Count");
+    job.setJarByClass(PriorCount.class);
+    job.setInputFormatClass(DirInputFormat.class);
+    job.setMapperClass(PriorCountMapper.class);
+    job.setReducerClass(PriorCountReducer.class);
+    job.setMapOutputKeyClass(Text.class);
+    job.setMapOutputValueClass(IntWritable.class);
+    job.setOutputKeyClass(Text.class);
+    job.setOutputValueClass(DoubleWritable.class);
 
-		DirInputFormat.setInputPath(job, input);
-		FileOutputFormat.setOutputPath(job, output);
+    DirInputFormat.setInputPath(job, input);
+    FileOutputFormat.setOutputPath(job, output);
 
-		return job.waitForCompletion(true);
-	}
+    return job.waitForCompletion(true);
+  }
 }
